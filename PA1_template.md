@@ -12,37 +12,50 @@ library(plyr)
 ## Loading and preprocessing the data
 
 ```r
-zip_filename = "../repdata-data-activity.zip"
-results = unzip(zip_filename, list=T)
-filename = paste("../",as.character(results[1]),sep="")
-# colClasses = c(factor, character, integer, numeric, logical, complex, and Date)
+filename = "activity.csv"
+
+# check if file exists as csv or zip
+if(! file.exists(filename) ) {
+    zip_filename = "activity.zip"
+    if (! file.exists(zip_filename)) {
+        stop("Input file is not in the current directory.")
+    }
+    results = unzip(zip_filename, junkpaths=T)
+    if (filename != as.character(results[1])) {
+        message("WARNING: unexpected filename from zip file")
+    }
+    filename = as.character(results[1])
+}
+
+# read data into table
 table1 = read.csv(filename, stringsAsFactors=T)
+table1$date = as.Date(table1$date)
 
-agg_date_stepSums = as.data.frame(aggregate(table1$steps, list(table1$date), sum))
-names(agg_date_stepSums) = c("Date", "TotalStepsPerDay")
-
-agg_interval_stepMeans = as.data.frame(aggregate(table1$steps, list(table1$interval), mean, na.rm=T))
-names(agg_interval_stepMeans) = c("Interval", "AvgStepsPerInterval")
-
+# create a subset data frame with the same number of columns as the original
 # find rows with no missing data
 complete_rows = complete.cases(table1)
 complete_data = table1[complete_rows,]
-missing_data = table1[!complete_rows,]
 ```
 
 ## What is mean total number of steps taken per day?
 
-The following code generates a histogram that shows the distribution of total steps per day.
+The following code generates a histogram of the total number of steps taken each day.
 
 
 ```r
+# create a small data frame with 2 columns (Date, TotalStepsPerDay)
+# for each day, sum the number of steps recorded that day
+agg_date_stepSums = as.data.frame(aggregate(table1$steps, list(table1$date), sum))
+names(agg_date_stepSums) = c("Date", "TotalStepsPerDay")
+
+# use ggplot to generate a histogram of the total number of steps taken each day
 ggplot(data = agg_date_stepSums, aes(TotalStepsPerDay)) + 
     geom_histogram(binwidth = 1000) + 
     ggtitle("Distribution of Total Steps Taken Per Day") + 
     xlab("Total Steps Taken Per Day") + ylab("Count (# of Days)")
 ```
 
-![](./PA1_template_files/figure-html/histogram_per_day-1.png) 
+![](./PA1_template_files/figure-html/histogram_orig_total_per_day-1.png) 
 
 
 The mean and median total number of steps taken per day can be calculated using R's `summary` function.
@@ -54,9 +67,7 @@ steps_mean = steps_summary["Mean"]
 steps_median = steps_summary["Median"]
 ```
   
-  
 The *mean* total number of steps taken per day is **10770** and the *median* number of steps taken per day is **10760**.  
-
   
 
 ## What is the average daily activity pattern?
@@ -65,6 +76,13 @@ A time series plot of the average daily activity pattern can be achieved by divi
 
 
 ```r
+# create a small data frame with 2 columns (Interval, AvgStepsPerInterval)
+# for each interval, average the number of steps recorded for that interval
+# do not consider missing values (na.rm=T)
+agg_interval_stepMeans = as.data.frame(aggregate(table1$steps, list(table1$interval), mean, na.rm=T))
+names(agg_interval_stepMeans) = c("Interval", "AvgStepsPerInterval")
+
+# use ggplot to generate a time series plot that shows the intervals (x-axis) vs average number of steps taken (y-axis)
 ggplot(data = agg_interval_stepMeans, aes(Interval, AvgStepsPerInterval)) + 
     geom_line() + 
     ggtitle("Daily Activity Pattern") + 
@@ -80,7 +98,7 @@ Although one can visually estimate that the interval with the maximum average nu
 max_stepMeans_per_interval = agg_interval_stepMeans[agg_interval_stepMeans$AvgStepsPerInterval == max(agg_interval_stepMeans$AvgStepsPerInterval),]
 ```
 
-Interval **835** contains the maximum number of steps (**206.1698113**) averaged across all of the days in the dataset.
+Interval **835** contains the maximum number of steps (**206.00**) averaged across all of the days in the dataset.
 
 
 ## Imputing missing values
@@ -89,29 +107,36 @@ The missing values (coded as NA) from certain days/intervals may be introducing 
 
 Out of the **17568 rows** in the provided dataset, **15264 rows** have *complete* information, and **2304 rows** have *missing* data.  
 
-The mean number of steps for a given interval is used as an estimation for the missing values.  
+One possible strategy to impute the missing data is to use the mean number of steps for a given interval as an estimation for the missing values.  
 
 
 ```r
+# create a new table that merges the original table (table1) with the agg_interval_stepMeans table 
+# the agg_interval_stepMeans table has 2 columns, Interval and AvgStepsPerInterval
+# table1 and agg_interval_stepMeans both have an "interval" column
+# in the new table, each missing (i.e., NA) "steps" value will be replaced with its interval's AvgStepsPerInterval value
 table_imputed = merge(table1, agg_interval_stepMeans, by.x="interval",by.y="Interval", all=T)
 table_imputed[is.na(table_imputed$steps),"steps"] = table_imputed[is.na(table_imputed$steps),"AvgStepsPerInterval"]
 ```
-
-Now, the histogram is re-created.
+  
+Now, the histogram of total steps taken per day is re-created with the new dataset including imputed values.  
 
 
 ```r
+# create a small data frame with two columns (Date, TotalStepsPerDay)
+# for each day, sum the number of steps recorded that day
 agg_imp_date_stepSums = as.data.frame(aggregate(table_imputed$steps, list(table_imputed$date), sum))
 names(agg_imp_date_stepSums) = c("Date", "TotalStepsPerDay")
 
+# use ggplot to generate a histogram of the total number of steps taken each day
 ggplot(data = agg_imp_date_stepSums, aes(TotalStepsPerDay)) + 
     geom_histogram(binwidth = 1000) + 
     ggtitle("Distribution of Total Steps Taken Per Day\n(New Dataset with Imputed Values)") + 
     xlab("Total Steps Taken Per Day") + ylab("Count (# of Days)")
 ```
 
-![](./PA1_template_files/figure-html/re-create_histogram_imputed_data-1.png) 
-
+![](./PA1_template_files/figure-html/histogram_stepSums_imputed_data-1.png) 
+  
 From the new dataset, the mean and median can be calculated.  
 
 
@@ -120,29 +145,45 @@ new_steps_summary = summary(agg_imp_date_stepSums$TotalStepsPerDay)
 new_steps_mean = new_steps_summary["Mean"]
 new_steps_median = new_steps_summary["Median"]
 ```
-  
-  
-The *mean* total number of steps taken per day is **10770** and the *median* number of steps taken per day is **10770**.  These values have not dramatically changed from the original dataset; in fact, the mean is the same, and the median increased by 10 total steps per day after the imputed values were considered.  This result is reassuring that the newly added data was similar to the original data and did not introduce large biases. 
 
+The *mean* total number of steps taken per day is **10770** and the *median* number of steps taken per day is **10770**.  
 
+These values have not dramatically changed from the original dataset. 
+In fact, the mean is the same, and the median increased by 10 total steps per day after the imputed values were considered. 
+This result is reassuring that the newly added data was similar to the original data and did not introduce large biases. The median is affected because days that did not previously have totals now have values that are around the average of the original dataset. This increases the number of days with "average" step totals, as evidenced by the larger counts observed around 10770 steps per day. 
 
 ## Are there differences in activity patterns between weekdays and weekends?
 
+The revised dataset with imputed values can be separated by weekend and weekdays using the information from the "date" column. 
+The following code separates the data into weekend (Saturday and Sunday) vs weekday (Monday-Friday) daily activity patterns. 
+Similar to the previous time series plot, the average number of steps taken in an interval (y-axis) are plotted for each interval (x-axis).
+
+
 
 ```r
-table_imputed$date = as.Date(table_imputed$date)
+# add a new column to the imputed data, DayOfWeek (Sunday-Saturday), corresponding to the date column
+# add another column to the imputed data, determining if the DayOfWeek is a "weekend" (Saturday or Sunday) or a "weekday"
 table_imputed$DayOfWeek = weekdays(table_imputed$date)
 table_imputed$isWeekend = "weekday"
 table_imputed[table_imputed$DayOfWeek %in% c("Saturday","Sunday"),"isWeekend"] = "weekend"
 table_imputed$isWeekend = factor(table_imputed$isWeekend, levels=c("weekend","weekday"))
 
+# create a small data frame with three columns (Interval, isWeekend, AvgStepsPerInterval)
+# find the average steps taken in each interval on weekends vs weekdays
 weekly_agg_interval_stepMeans = aggregate(steps ~ interval + isWeekend, data=table_imputed, mean)
 names(weekly_agg_interval_stepMeans) = c("Interval", "isWeekend", "AvgStepsPerInterval")
 
+# use ggplot to generate a panel graph with two rows of time series plots describing the daily activity pattern
+# interval (x-axis) vs average steps taken in each interval (y-axis)
+# weekend (top) and weekday (bottom)
 ggplot(data = weekly_agg_interval_stepMeans, aes(Interval, AvgStepsPerInterval)) + 
-    geom_line() + facet_grid(isWeekend~.) +
+    geom_line(colour="steelblue2") + facet_grid(isWeekend~.) +
     ggtitle("Daily Activity Pattern in Weekdays vs Weekends\n(New Dataset with Imputed Values)") + 
-    xlab("Interval") + ylab("Number of steps")
+    xlab("Interval") + ylab("Number of steps") + 
+    theme(strip.background = element_rect(fill="peachpuff1", colour="black"), panel.background = element_rect(fill="white"))
 ```
 
-![](./PA1_template_files/figure-html/weekdays-1.png) 
+![](./PA1_template_files/figure-html/timeseries_interval_steps_weekdays_new-1.png) 
+
+There seems to be a pronounced difference in the intervals 750-950 in the weekdays compared to the other intervals in the weekdays, and this difference is less apparent in the weekend data. 
+Also, aside from intervals 750-950 in the weekday plot, the other intervals suggest lower average numbers of steps taken compared to the same intervals illustrated in the weekend plot.
